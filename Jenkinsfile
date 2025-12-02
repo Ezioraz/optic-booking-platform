@@ -7,7 +7,7 @@ pipeline {
         ECR_REPO        = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/optic-booking"
         IMAGE_TAG       = "build-${BUILD_NUMBER}"
 
-        // These come from Jenkins credentials you added
+        // Jenkins AWS credential
         AWS_CREDS       = credentials('aws-jenkins-user')
     }
 
@@ -21,51 +21,62 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh '''
+                sh """
                 docker build -t optic-booking:${IMAGE_TAG} -f docker/Dockerfile .
-                '''
+                """
             }
         }
 
         stage('Login to ECR') {
             steps {
-                withEnv(["AWS_ACCESS_KEY_ID=${AWS_CREDS_USR}",
-                         "AWS_SECRET_ACCESS_KEY=${AWS_CREDS_PSW}",
-                         "AWS_DEFAULT_REGION=${AWS_REGION}"]) {
-                    sh '''
+                withEnv([
+                    "AWS_ACCESS_KEY_ID=${AWS_CREDS_USR}",
+                    "AWS_SECRET_ACCESS_KEY=${AWS_CREDS_PSW}",
+                    "AWS_DEFAULT_REGION=${AWS_REGION}"
+                ]) {
+                    sh """
                     aws ecr get-login-password --region ${AWS_DEFAULT_REGION} \
-                        | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
-                    '''
+                        | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    """
                 }
             }
         }
 
         stage('Push to ECR') {
             steps {
-                sh '''
+                sh """
                 docker tag optic-booking:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
                 docker push ${ECR_REPO}:${IMAGE_TAG}
-                '''
+                """
             }
         }
 
         stage('Deploy to EKS') {
             steps {
-                withEnv(["AWS_ACCESS_KEY_ID=${AWS_CREDS_USR}",
-                         "AWS_SECRET_ACCESS_KEY=${AWS_CREDS_PSW}",
-                         "AWS_DEFAULT_REGION=${AWS_REGION}"]) {
+                withEnv([
+                    "AWS_ACCESS_KEY_ID=${AWS_CREDS_USR}",
+                    "AWS_SECRET_ACCESS_KEY=${AWS_CREDS_PSW}",
+                    "AWS_DEFAULT_REGION=${AWS_REGION}"
+                ]) {
 
-                    // Use kubeconfig from Jenkins credentials
                     withCredentials([file(credentialsId: 'eks-kubeconfig', variable: 'KUBECONFIG')]) {
+
+                        // DEBUG BLOCK — Shows first 20 lines of kubeconfig
                         sh '''
-                        # Update image in deployment
+                        echo "================= DEBUG: PRINTING KUBECONFIG ================="
+                        cat $KUBECONFIG | head -n 25
+                        echo "==============================================================="
+                        '''
+
+                        // Deploy
+                        sh """
                         sed -i "s|image: .*|image: ${ECR_REPO}:${IMAGE_TAG}|" k8s/deployment.yaml
 
                         kubectl apply -f k8s/deployment.yaml
                         kubectl apply -f k8s/service.yaml
 
-                        kubectl rollout status deployment/optic-booking-deployment
-                        '''
+                        kubectl rollout status deployment/optic-booking-deployment --timeout=90s
+                        """
                     }
                 }
             }
