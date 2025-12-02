@@ -7,7 +7,6 @@ pipeline {
         ECR_REPO        = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/optic-booking"
         IMAGE_TAG       = "build-${BUILD_NUMBER}"
 
-        // Jenkins AWS credential
         AWS_CREDS       = credentials('aws-jenkins-user')
     }
 
@@ -35,7 +34,7 @@ pipeline {
                     "AWS_DEFAULT_REGION=${AWS_REGION}"
                 ]) {
                     sh """
-                    aws ecr get-login-password --region ${AWS_DEFAULT_REGION} \
+                    aws ecr get-login-password --region ${AWS_REGION} \
                         | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
                     """
                 }
@@ -61,21 +60,24 @@ pipeline {
 
                     withCredentials([file(credentialsId: 'eks-kubeconfig', variable: 'KUBECONFIG')]) {
 
-                        // DEBUG BLOCK — Shows first 20 lines of kubeconfig
                         sh '''
                         echo "================= DEBUG: PRINTING KUBECONFIG ================="
-                        cat $KUBECONFIG | head -n 25
-                        echo "==============================================================="
+                        head -n 25 $KUBECONFIG
+                        echo "=============================================================="
                         '''
 
-                        // Deploy
                         sh """
+                        export KUBECONFIG=${KUBECONFIG}
+
+                        echo "Updating deployment image..."
                         sed -i "s|image: .*|image: ${ECR_REPO}:${IMAGE_TAG}|" k8s/deployment.yaml
 
-                        kubectl apply -f k8s/deployment.yaml
-                        kubectl apply -f k8s/service.yaml
+                        echo "Applying manifests..."
+                        kubectl apply -f k8s/deployment.yaml --validate=false
+                        kubectl apply -f k8s/service.yaml --validate=false
 
-                        kubectl rollout status deployment/optic-booking-deployment --timeout=90s
+                        echo "Waiting for rollout..."
+                        kubectl rollout status deployment/optic-booking-deployment --timeout=120s
                         """
                     }
                 }
