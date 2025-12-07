@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="./assets/images/overview.png" alt="Optic Booking Platform Overview" width="900"/>
+  <img src="./assets/images/opticbooking.webp.png" alt="Optic Booking Platform Overview" width="900"/>
 </p>
+
 
 # 👓 Optic Booking Platform  
 A modern cloud-ready booking platform built for optical stores. Customers can book appointments, browse products, manage profiles, and store owners get a full admin dashboard with booking management, schedules, and analytics.
